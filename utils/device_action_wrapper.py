@@ -6,11 +6,19 @@ import utils.adb_actions as adb_actions
 import utils.constants as constants
 import inspect
 from utils.log import error, info, warning, debug, debug_window, args
+from utils.notifications import on_stopped
+from utils.webhook import StopReason
 import os
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
 import warnings
 warnings.filterwarnings("ignore", message="pkg_resources is deprecated as an API")
 import pygame
+
+from random import randint
+#get random int
+deviation=5
+def gri():
+  return randint(-deviation, deviation)
 
 from time import sleep, time
 
@@ -23,7 +31,9 @@ try:
   AUDIO_AVAILABLE = True
 except pygame.error:
   AUDIO_AVAILABLE = False
-def stop_bot(message = None, notification_string = None, volume = 0.3):
+
+def stop_bot(reason: StopReason = StopReason.UNKNOWN, notification_string = None, volume = 0.3):
+  debug(f"{notification_string}")
   stack = inspect.stack()
   debug(f"stop_bot called from {stack[1].function}")
   debug("======== Tracing stack ==========")
@@ -39,8 +49,9 @@ def stop_bot(message = None, notification_string = None, volume = 0.3):
     pygame.mixer.music.set_volume(volume)
     pygame.mixer.music.load(f"{notification_string}")
     pygame.mixer.music.play()
-  if message is not None:
-    debug(f"Bot stopped with message: {message}")
+
+  debug(f"Bot stopped: {reason.value}")
+  on_stopped(reason)
   raise BotStopException("Bot stopped. If this was not intentional, please report with the logs above.")
 
 Pos = tuple[int, int]                     # (x, y)
@@ -58,10 +69,10 @@ def click(target: Pos | Box, clicks: int = 1, interval: float = 0.1, duration: f
     if bot.use_adb:
       sleep(duration)
       for _ in range(clicks):
-        adb_actions.click(x, y)
+        adb_actions.click(x+gri(), y+gri())
         sleep(interval)
     else:
-      pyautogui_actions.click(x_y=(x, y), clicks=clicks, interval=interval, duration=duration)
+      pyautogui_actions.click(x_y=(x+gri(), y+gri()), clicks=clicks, interval=interval, duration=duration)
   elif len(target) == 4:
     x, y, w, h = target
     cx = x + w // 2
@@ -69,10 +80,10 @@ def click(target: Pos | Box, clicks: int = 1, interval: float = 0.1, duration: f
     if bot.use_adb:
       sleep(duration)
       for _ in range(clicks):
-        adb_actions.click(cx, cy)
+        adb_actions.click(cx+gri(), cy+gri())
         sleep(interval)
     else:
-      pyautogui_actions.click(x_y=(cx, cy), clicks=clicks, interval=interval, duration=duration)
+      pyautogui_actions.click(x_y=(cx+gri(), cy+gri()), clicks=clicks, interval=interval, duration=duration)
   else:
     raise TypeError(f"Expected (x, y) or (x, y, w, h) tuple, got type {type(target)}: {target}")
   if args.device_debug:
@@ -88,9 +99,9 @@ def swipe(start_x_y : tuple[int, int], end_x_y : tuple[int, int], duration=0.3, 
   if not bot.is_bot_running:
     stop_bot()
   if bot.use_adb:
-    adb_actions.swipe(start_x_y[0], start_x_y[1], end_x_y[0], end_x_y[1], duration)
+    adb_actions.swipe(start_x_y[0]+gri(), start_x_y[1]+gri(), end_x_y[0]+gri(), end_x_y[1]+gri(), duration)
   else:
-    pyautogui_actions.swipe(start_x_y, end_x_y, duration)
+    pyautogui_actions.swipe((start_x_y[0]+gri(), start_x_y[1]+gri()), (end_x_y[0]+gri(), end_x_y[1]+gri()), duration)
   if args.device_debug:
     debug(f"We swiped from {start_x_y} to {end_x_y}, screen might change, flushing screenshot cache.")
   flush_screenshot_cache()
@@ -235,7 +246,6 @@ def locate(img_path : str, confidence=0.8, min_search_time=0, region_ltrb : tupl
   boxes = match_template(img_path, _screenshot, confidence, template_scaling=template_scaling)
   tries = 1
   elapsed_time = time() - time_start
-
   while len(boxes) < 1 and elapsed_time < min_search_time:
     tries += 1
     flush_screenshot_cache()

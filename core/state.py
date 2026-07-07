@@ -72,9 +72,10 @@ def collect_main_state():
   debug(f"Main state collection done.")
   return state_object
 
-def collect_training_state(state_object, training_function_name):
-  check_stat_gains = False
-  if training_function_name == "meta_training" or training_function_name == "most_stat_gain":
+def collect_training_state(state_object, training_function_name, check_stat_gains=False):
+  chain = config.TRAINING_CHAINS[training_function_name]
+
+  if "meta_training" in chain or "most_stat_gain" in chain:
     check_stat_gains = True
 
   if device_action.locate_and_click("assets/buttons/training_btn.png", min_search_time=get_secs(5), region_ltrb=constants.SCREEN_BOTTOM_BBOX):
@@ -101,10 +102,10 @@ def collect_training_state(state_object, training_function_name):
       training_results[name].update(get_support_card_data())
 
     debug(f"Training results: {training_results}")
-    
-    training_results = filter_training_lock(training_results)
+    training_locked, training_results = filter_training_lock(training_results)
     device_action.locate_and_click("assets/buttons/back_btn.png", min_search_time=get_secs(1), region_ltrb=constants.SCREEN_BOTTOM_BBOX)
     state_object["training_results"] = training_results
+    state_object["training_locked"] = training_locked
 
   debug(f"State object: {state_object}")
   return state_object
@@ -124,7 +125,7 @@ def filter_training_lock(training_results):
 
     debug(f"Training results after removal: {training_results}")
 
-  return training_results
+  return training_locked, training_results
 
 def training_fingerprint(training):
   fp = []
@@ -192,6 +193,7 @@ def get_support_card_data(threshold=0.8):
     unity_training_matches = device_action.match_template("assets/unity/unity_training.png", screenshot, threshold)
     unity_gauge_matches = device_action.match_template("assets/unity/unity_gauge_unfilled.png", screenshot, threshold)
     unity_spirit_exp_matches = device_action.match_template("assets/unity/unity_spirit_explosion.png", screenshot, threshold)
+    unity_ext_spirit_exp_matches = device_action.match_template("assets/unity/unity_extreme_spirit_explosion.png", screenshot, threshold)
 
     for training_match in unity_training_matches:
       count_result["unity_trainings"] += 1
@@ -204,6 +206,12 @@ def get_support_card_data(threshold=0.8):
 
     for spirit_exp_match in unity_spirit_exp_matches:
       count_result["unity_spirit_explosions"] += 1
+    for spirit_exp_match in unity_ext_spirit_exp_matches:
+      count_result["unity_extreme_spirit_explosions"] += 1
+  elif constants.SCENARIO_NAME == "ura":
+    happy_meek_match = device_action.match_template("assets/ura/happy_meek_challenge.png", screenshot, threshold)
+    if happy_meek_match:
+      count_result["happy_meek_challenge"] = 1
 
   hint_matches = device_action.match_template("assets/icons/support_hint.png", screenshot, threshold)
 
@@ -447,11 +455,13 @@ def get_current_year():
 
   if device_action.locate_and_click("assets/buttons/races_btn.png", min_search_time=get_secs(10), region_ltrb=constants.SCREEN_BOTTOM_BBOX):
     info(f"Couldn't match year text in main screen, checking alternative on the race screen.")
+    device_action.locate_and_click("assets/buttons/ok_btn.png", min_search_time=get_secs(2)) # Consecutive races popup check
     device_action.locate("assets/buttons/back_btn.png", min_search_time=get_secs(2), region_ltrb=constants.SCREEN_BOTTOM_BBOX)
     year_region = enhanced_screenshot(constants.RACE_LIST_YEAR_REGION)
     text = extract_text(year_region, allowlist=constants.OCR_DATE_RECOGNITION_SET)
     debug(f"Year text from races screen: {text}")
     device_action.locate_and_click("assets/buttons/back_btn.png", min_search_time=get_secs(2), region_ltrb=constants.SCREEN_BOTTOM_BBOX)
+    sleep(1)
 
   return text
 
@@ -509,7 +519,7 @@ def get_current_stats(turn, enable_debug=True):
         final_stat_value = extract_text(cropped_image, allowlist="0123456789MAX", threshold=threshold)
         debug(f"Threshold: {threshold}, stat value: {final_stat_value}")
     if final_stat_value == "MAX":
-      final_stat_value = 1200
+      final_stat_value = 99999
     elif is_number(final_stat_value):
       final_stat_value = int(final_stat_value)
     else:
@@ -620,8 +630,9 @@ def filter_race_list(state):
         constants.RACES[date].append(race)
   debug(f"Races after filtering: {constants.RACES}")
 
+import copy
 def filter_race_schedule(state):
-  config.RACE_SCHEDULE = config.RACE_SCHEDULE_CONF.copy()
+  config.RACE_SCHEDULE = copy.deepcopy(config.RACE_SCHEDULE_CONF)
   debug(f"Schedule before filtering: {config.RACE_SCHEDULE}")
   schedule = {}
   for race in config.RACE_SCHEDULE:
@@ -629,15 +640,21 @@ def filter_race_schedule(state):
     if date_long not in schedule:
       schedule[date_long] = []
     schedule[date_long].append(race)
-  config.RACE_SCHEDULE = schedule
-  for date in schedule:
+  config.RACE_SCHEDULE = copy.deepcopy(schedule)
+
+  for date in config.RACE_SCHEDULE:
+    valid_names = {k["name"] for k in constants.RACES[date]}
+
+    new_list = []
     for race in schedule[date]:
-      if race["name"] not in [k["name"] for k in constants.RACES[date]]:
-        schedule[date].remove(race)
-      else:
-        # find race name in constants.ALL_RACES[date] and get fans_gained
+      if race["name"] in valid_names:
         for race_data in constants.ALL_RACES[date]:
           if race_data["name"] == race["name"]:
             race["fans_gained"] = race_data["fans"]["gained"]
             break
+
+        new_list.append(race)
+
+    schedule[date] = new_list
+  config.RACE_SCHEDULE = copy.deepcopy(schedule)
   debug(f"Schedule after filtering: {config.RACE_SCHEDULE}")

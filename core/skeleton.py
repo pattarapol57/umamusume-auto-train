@@ -21,6 +21,7 @@ import core.bot as bot
 from utils.log import info, warning, error, debug, log_encoded, args, record_turn, user_info_block, VERSION
 from utils.device_action_wrapper import BotStopException
 import utils.device_action_wrapper as device_action
+from utils.notifications import on_progress, reset_progress_tracking, StopReason
 
 from core.strategies import Strategy
 from utils.adb_actions import init_adb
@@ -97,6 +98,8 @@ def career_lobby(dry_run_turn=False):
   strategy = Strategy()
   init_adb()
   init_skill_py()
+  reset_progress_tracking()
+  last_state = CleanDefaultDict()
   try:
     while bot.is_bot_running:
       sleep(1)
@@ -107,9 +110,9 @@ def career_lobby(dry_run_turn=False):
         info("Career lobby stuck, quitting.")
         complete_career_btn = device_action.locate("assets/buttons/complete_career_btn.png", min_search_time=get_secs(2))
         if complete_career_btn is not None:
-          device_action.stop_bot("finished", f"assets/notifications/{config.SUCCESS_NOTIFICATION}", volume = config.NOTIFICATION_VOLUME)
+          device_action.stop_bot(StopReason.FINISHED, f"assets/notifications/{config.SUCCESS_NOTIFICATION}", volume = config.NOTIFICATION_VOLUME)
         else:
-          device_action.stop_bot("stuck", f"assets/notifications/{config.ERROR_NOTIFICATION}", volume = config.NOTIFICATION_VOLUME)
+          device_action.stop_bot(StopReason.STUCK, f"assets/notifications/{config.ERROR_NOTIFICATION}", volume = config.NOTIFICATION_VOLUME)
       if constants.SCENARIO_NAME == "":
         info("Trying to find what scenario we're on.")
         if device_action.locate_and_click("assets/unity/unity_cup_btn.png", min_search_time=get_secs(1)):
@@ -160,6 +163,8 @@ def career_lobby(dry_run_turn=False):
       # adding skip function for claw machine
       if matches.get("claw_btn", False) or matches.get("claw_btn_2", False):
         if not config.USE_SKIP_CLAW_MACHINE:
+          info("Claw machine detected, but skip is disabled. Stopping the bot for manual play.")
+          device_action.stop_bot(StopReason.CLAW_MACHINE, f"assets/notifications/{config.INFO_NOTIFICATION}", volume=config.NOTIFICATION_VOLUME)
           continue
 
         claw_match = ""
@@ -215,9 +220,15 @@ def career_lobby(dry_run_turn=False):
 
       action = Action()
       state_obj = collect_main_state()
+
       if not validate_turn(state_obj):
         info("Couldn't read turn text correctly, retrying to avoid unnecessary races. If this keeps happening please report it.")
         continue
+
+      on_progress(state_obj)
+
+      check_configured_bot_stop(state_obj)
+
       action["scroll_to_top_wanted"] = False
       if state_obj["turn"] == "Race Day":
         action.func = "do_race"
@@ -294,6 +305,9 @@ def career_lobby(dry_run_turn=False):
       training_function_name = strategy.get_training_template(state_obj)['training_function']
 
       state_obj = collect_training_state(state_obj, training_function_name)
+      if state_obj["training_locked"]:
+        state_obj = collect_training_state(state_obj, training_function_name, check_stat_gains=True)
+
       if not state_obj.get("training_results", False):
         info("Couldn't collect training state, retrying turn from top.")
         continue
@@ -311,7 +325,12 @@ def career_lobby(dry_run_turn=False):
         info("State is invalid, retrying...")
         debug(f"State: {state_obj}")
       elif action.func == "skip_turn":
-        info("Skipping turn, retrying...")
+        warning("##############################################################################")
+        warning("No more actions remaining in available_actions. Skipping turn by training wit.")
+        warning("##############################################################################")
+        action.run()
+        record_and_finalize_turn(state_obj, action)
+        continue
       else:
         debug(f"Taking action: {action.func}")
 
@@ -320,13 +339,19 @@ def career_lobby(dry_run_turn=False):
           buy_skill(state_obj, action_count, race_check=True)
         if dry_run_turn:
           info("Dry run turn, quitting.")
-          device_action.stop_bot("finished", f"assets/notifications/{config.SUCCESS_NOTIFICATION}", volume = config.NOTIFICATION_VOLUME)
+          record_and_finalize_turn(state_obj, action)
+          device_action.stop_bot(StopReason.FINISHED, f"assets/notifications/{config.SUCCESS_NOTIFICATION}", volume = config.NOTIFICATION_VOLUME)
+
         elif not action.run():
           if action.available_actions:  # Check if the list is not empty
             action.available_actions.pop(0)
           else:
-            warning("No more actions remaining in available_actions. Retrying turn to fix.")
-            non_match_count += 1
+            warning("##############################################################################")
+            warning("No more actions remaining in available_actions. Skipping turn by training wit.")
+            warning("##############################################################################")
+            action.func="skip_turn"
+            action.run()
+            record_and_finalize_turn(state_obj, action)
             continue
 
           if action.options.get("race_mission_available") and action.func == "do_race":
@@ -346,6 +371,12 @@ def career_lobby(dry_run_turn=False):
               break
             debug(f"Action {function_name} failed, trying other actions.")
 
+          warning("##############################################################################")
+          warning("No more actions remaining in available_actions. Skipping turn by training wit.")
+          warning("##############################################################################")
+          action.func="skip_turn"
+          action.run()
+
         record_and_finalize_turn(state_obj, action)
         continue
 
@@ -363,9 +394,24 @@ def record_and_finalize_turn(state_obj, action):
   if LIMIT_TURNS > 0:
     if action_count >= LIMIT_TURNS:
       info(f"Completed {action_count} actions, stopping bot as requested.")
-      device_action.stop_bot("finished", f"assets/notifications/{config.SUCCESS_NOTIFICATION}", volume = config.NOTIFICATION_VOLUME)
+      device_action.stop_bot(StopReason.FINISHED, f"assets/notifications/{config.SUCCESS_NOTIFICATION}", volume = config.NOTIFICATION_VOLUME)
 
 def validate_turn(state):
   if state["turn"] == -1:
     return False
   return True
+
+def check_configured_bot_stop(state):
+  def bot_stop_func():
+    device_action.stop_bot(StopReason.FINISHED, f"assets/notifications/{config.SUCCESS_NOTIFICATION}", volume = config.NOTIFICATION_VOLUME)
+
+  for turn in config.STOP_AT_TURNS:
+    if state["year"] in turn:
+      if "Finale Underway" in turn:
+        finale_type = turn.split(" ")[2]
+        debug(f"check_configured_bot_stop {turn} {finale_type} {state['criteria']} {state['turn']}")
+        if finale_type in state["criteria"] and state["turn"] == "Race Day":
+          bot_stop_func()
+      else:
+        debug(f"check_configured_bot_stop {turn} { state['year']}")
+        bot_stop_func()

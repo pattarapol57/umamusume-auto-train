@@ -1,17 +1,18 @@
 import { useRef } from "react";
 import { validateConfig } from "../utils/validateConfig";
 import type { Config } from "../types";
+import { SETUP_KEYS } from "../constants/setupKeys";
 
 type Props = {
-  activeIndex: number;
-  updatePreset: (i: number, config: Config) => void;
-  savePreset: (config: Config) => void;
+  activeConfig: Config;
+  createPreset: () => Promise<{ id: string } | null>;
+  savePresetById: (presetId: string, config: Config) => void | Promise<void>;
 };
 
 export function useImportConfig({
-  activeIndex,
-  updatePreset,
-  savePreset,
+  activeConfig,
+  createPreset,
+  savePresetById,
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -27,7 +28,18 @@ export function useImportConfig({
       const text = await file.text();
       const json = JSON.parse(text);
 
-      const result = validateConfig(json);
+      const normalizedImport =
+        json && typeof json === "object"
+          ? { ...(json as Record<string, unknown>) }
+          : {};
+
+      for (const key of SETUP_KEYS) {
+        if (!(key in normalizedImport)) {
+          normalizedImport[key] = activeConfig[key];
+        }
+      }
+
+      const result = validateConfig(normalizedImport);
 
       if (!result.success) {
         console.error("Invalid config:", result.errors);
@@ -36,20 +48,14 @@ export function useImportConfig({
       }
 
       const config = result.data!;
-      updatePreset(activeIndex, config);
-      savePreset(config);
-
-      try {
-        await fetch("/config", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(json),
-        });
-      } catch (err) {
-        console.warn("Failed to sync with server:", err);
+      const createdPreset = await createPreset();
+      if (!createdPreset?.id) {
+        alert("Failed to create a new preset for import");
+        return;
       }
+      await savePresetById(createdPreset.id, config);
 
-      alert(`Config imported to preset ${activeIndex + 1}!`);
+      alert("Config imported into a new preset!");
     } catch (err) {
       console.error("Import error:", err);
       alert("Failed to import config");

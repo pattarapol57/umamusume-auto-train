@@ -47,9 +47,14 @@ Use responsibly and at your own discretion.
 
 - [Python Versions 3.10 to 3.13](https://www.python.org/downloads/)
 - [Windows Installer 64-bit direct link](https://www.python.org/ftp/python/3.13.11/python-3.13.11-amd64.exe)
-<img width="445" height="141" alt="image" src="https://github.com/user-attachments/assets/36f7f078-9fce-4bd8-b92c-7ff5c5a5eb8d" />
+  - You need to scroll down and download one of these. (3.13 is always tested, the others will be supported but not guaranteed to immediately work, ask on Discord or issues if things don't work for you)
+  - <img width="445" height="141" alt="image" src="https://github.com/user-attachments/assets/36f7f078-9fce-4bd8-b92c-7ff5c5a5eb8d" />
+- [Build Tools for C++ for Windows](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+  - After you run the downloaded file, this needs to be checked.
+  - <img width="427" height="137" alt="image" src="https://github.com/user-attachments/assets/49398a08-3586-44d0-ab6d-b882a767a961" />
 
-### Setup
+### Quick Setup
+For a step by step guide go to [bot guide](./readmes/BOT_GUIDE.md)
 
 #### Clone repository
 
@@ -121,6 +126,23 @@ This should work from the main menu or at almost any point in the CM or TT scree
 Notes: this doesn't work if you have an in progress CM from the main menu, like done 1/5 etc. In that case just go into the screen with the match button and start there. It will also skip the shops, not going to implement that since it's a bigger hassle than just putting some buttons in a list.
 `py auto_misc.py --cm` for automatically doing ALL of CM races (will use 30 carat for last race).
 `py auto_misc.py --tt` for automatically doing all TT races. You can do `py auto_misc.py --tt hard/medium/easy` to pick difficulty.
+
+#### Migrate old localStorage presets to config files
+
+If you used an older web UI that stored presets in browser localStorage, you can migrate them into `config/*.json` with following steps:
+
+Click on Manage in the UI, click on Export Old Configs. The file should be downloaded as `old_configs.json` into your default download folder.
+
+You can either cut and paste the file into the bot folder and run this:
+```py migrate_local_storage_presets.py ./old_configs.json```
+
+or you can specify where the file is with:
+
+```py migrate_local_storage_presets.py "C:\path\to\file.json"```
+
+if you add the `--dry-run` option to the end it will say what it will do like this:
+
+```py migrate_local_storage_presets.py "C:\path\to\file.json" --dry-run```
 
 ### How to change branches / install bot / use github desktop video guide
 - Watch video https://www.youtube.com/watch?v=iOuoJI1q1hk
