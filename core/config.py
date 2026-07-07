@@ -4,6 +4,9 @@ import os
 #put a default for sleep time multiplier since it's an important value
 SLEEP_TIME_MULTIPLIER = 1
 
+WEBHOOK_URL = ""
+WEBHOOK_PROGRESS_ENABLED = True
+
 # to see any config variables you must call reload_config()
 def load_config():
   with open("config.json", "r", encoding="utf-8") as file:
@@ -11,6 +14,26 @@ def load_config():
 
 def load_var(var_name, value):
   globals()[var_name] = value
+
+def generate_training_chains():
+  chains = {}
+  for start_function in FUNCTION_FALLBACKS:
+    chain = [start_function]
+    current_function = start_function
+    while True:
+      if not FUNCTION_FALLBACKS[current_function]["fallback_enabled"]:
+        break
+      next_function = FUNCTION_FALLBACKS[current_function]["fallback_method"]
+      if next_function == "action_queue":
+        chain.append(next_function)
+        break
+      if next_function in chain:
+        chain.append(next_function)
+        break
+      chain.append(next_function)
+      current_function = next_function
+    chains[start_function] = chain
+  return chains
 
 def reload_config():
   try:
@@ -51,6 +74,7 @@ def reload_config():
     load_var('RACE_TURN_THRESHOLD', config["race_turn_threshold"])
     load_var('USE_ADB', config["use_adb"])
     load_var('DEVICE_ID', config["device_id"])
+    load_var('OCR_USE_GPU', config["ocr_use_gpu"])
     load_var('NOTIFICATIONS_ENABLED', config["notifications_enabled"])
     load_var('INFO_NOTIFICATION', config["info_notification"])
     load_var('ERROR_NOTIFICATION', config["error_notification"])
@@ -64,7 +88,11 @@ def reload_config():
     load_var('HINT_HUNTING_WEIGHTS', config["hint_hunting_weights"])
     load_var('SCENARIO_GIMMICK_WEIGHT', config["scenario_gimmick_weight"])
     load_var('USE_SKIP_CLAW_MACHINE', config["use_skip_claw_machine"])
-      
+    load_var('STOP_AT_TURNS', config["stop_at_turns"])
+    load_var('MINIMUM_ACCEPTABLE_SCORES', config["minimum_acceptable_scores"])
+    load_var('FUNCTION_FALLBACKS', config["function_fallbacks"])
+    load_var('TRAINING_CHAINS', generate_training_chains())
+
   except KeyError as e:
     raise RuntimeError(f"Missing config key: {e.args[0]}, please copy it to config.json from config.template.json and try again")
 

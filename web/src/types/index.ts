@@ -5,6 +5,8 @@ import { RaceScheduleSchema } from "./race.type";
 import { StatSchema } from "./stat.type";
 import { SkillSchema } from "./skill.type";
 import { TrainingStrategySchema } from "./training-strategy.type";
+import { MinimumAcceptableScoresSchema } from "./game-state.type";
+import { FunctionFallbacksSchema } from "./function-fallbacks.type";
 
 export const ConfigSchema = z.object({
   config_name: z.string(),
@@ -18,6 +20,7 @@ export const ConfigSchema = z.object({
   skip_infirmary_unless_missing_energy: z.number(),
   hint_hunting_enabled: z.boolean(),
   hint_hunting_weights: StatSchema,
+  stop_at_turns: z.array(z.string()),
   use_skip_claw_machine: z.boolean(),
   wit_training_score_ratio_threshold: z.number(),
   rainbow_support_weight_addition: z.number(),
@@ -39,6 +42,7 @@ export const ConfigSchema = z.object({
   rest_before_summer_energy: z.number(),
   use_adb: z.boolean(),
   device_id: z.string(),
+  ocr_use_gpu: z.boolean(),
   notifications_enabled: z.boolean(),
   info_notification: z.string(),
   error_notification: z.string(),
@@ -57,9 +61,12 @@ export const ConfigSchema = z.object({
   }),
   race_schedule: z.array(RaceScheduleSchema),
   skill: SkillSchema,
+  function_fallbacks: FunctionFallbacksSchema,
+  minimum_acceptable_scores: MinimumAcceptableScoresSchema,
   event: EventSchema,
   training_strategy: TrainingStrategySchema,
   window_name: z.string(),
+  preset_id: z.string(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
